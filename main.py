@@ -4,7 +4,9 @@ from database import (
     SessionLocal,
     User,
     Item,
-    ScanResult
+    ScanResult,
+    UserPoint,
+    RewardHistory
 )
 from datetime import datetime
 import bcrypt
@@ -141,9 +143,16 @@ def login(data: LoginModel):
 # ================= UPDATE ACCOUNT MODEL =================
 
 class UpdateAccountModel(BaseModel):
+
     username: str
+
     new_username: str
-    new_password: str
+
+    email: str
+
+    phone: str
+
+    new_password: str = ""  
 
 # ================= INVENTORY MODEL =================
 
@@ -160,6 +169,9 @@ class InventoryModel(BaseModel):
 @app.post("/update-account")
 def update_account(data: UpdateAccountModel):
 
+    print("USERNAME LAMA = ${UserSession.username}");
+    print("USERNAME BARU = $username");
+
     db = SessionLocal()
 
     user = db.query(User).filter(
@@ -173,13 +185,18 @@ def update_account(data: UpdateAccountModel):
             "message": "User not found"
         }
 
-    hashed_password = bcrypt.hashpw(
-        data.new_password.encode('utf-8'),
-        bcrypt.gensalt()
-    )
-
     user.username = data.new_username
-    user.password = hashed_password.decode('utf-8')
+    user.email = data.email
+    user.phone = data.phone
+
+    if data.new_password.strip() != "":
+
+        hashed_password = bcrypt.hashpw(
+            data.new_password.encode('utf-8'),
+            bcrypt.gensalt()
+        )
+
+        user.password = hashed_password.decode('utf-8')
 
     db.commit()
 
@@ -407,3 +424,296 @@ def get_points(username: str):
     return {
         "points": point.points
     }
+
+@app.get("/reward-history/{username}")
+def reward_history(username: str):
+
+    db = SessionLocal()
+
+    user = db.query(User).filter(
+        User.username == username
+    ).first()
+
+    if not user:
+        return []
+
+    rewards = db.query(
+        RewardHistory
+    ).filter(
+        RewardHistory.user_id == user.id
+    ).all()
+
+    result = []
+
+    for reward in rewards:
+
+        result.append({
+
+            "reward_name":
+            reward.reward_name,
+
+            "points_used":
+            reward.points_used,
+
+            "redeemed_at":
+            reward.redeemed_at,
+        })
+
+    return result
+@app.get("/leaderboard")
+def leaderboard():
+
+    db = SessionLocal()
+
+    users = db.query(
+        User,
+        UserPoint
+    ).join(
+
+        UserPoint,
+        User.id == UserPoint.user_id
+
+    ).order_by(
+        UserPoint.points.desc()
+    ).all()
+
+    result = []
+
+    for user, point in users:
+
+        result.append({
+
+            "username":
+            user.username,
+
+            "points":
+            point.points,
+        })
+
+    return result
+
+@app.get("/inventory/expired/{username}")
+def expired_inventory(username: str):
+
+    db = SessionLocal()
+
+    user = db.query(User).filter(
+        User.username == username
+    ).first()
+
+    if not user:
+        return []
+
+    items = db.query(Item).filter(
+        Item.user_id == user.id,
+        Item.expiry_days <= 3
+    ).all()
+
+    result = []
+
+    for item in items:
+
+        result.append({
+
+            "name":
+            item.item_name,
+
+            "days_left":
+            item.expiry_days,
+        })
+
+    return result
+
+@app.get("/dashboard/{username}")
+def dashboard(username: str):
+
+    db = SessionLocal()
+
+    user = db.query(User).filter(
+        User.username == username
+    ).first()
+
+    if not user:
+        return {}
+
+    total_items = db.query(Item).filter(
+        Item.user_id == user.id
+    ).count()
+
+    point = db.query(UserPoint).filter(
+        UserPoint.user_id == user.id
+    ).first()
+
+    return {
+
+        "total_items":
+        total_items,
+
+        "eco_points":
+        point.points if point else 0
+    }
+
+class RedeemModel(BaseModel):
+
+    username: str
+    reward_name: str
+    points_required: int
+
+
+@app.post("/redeem")
+def redeem_reward(data: RedeemModel):
+
+    db = SessionLocal()
+
+    user = db.query(User).filter(
+        User.username == data.username
+    ).first()
+
+    if not user:
+
+        return {
+            "status": "error",
+            "message": "User not found"
+        }
+
+    point = db.query(UserPoint).filter(
+        UserPoint.user_id == user.id
+    ).first()
+
+    if not point:
+
+        return {
+            "status": "error",
+            "message": "Point record not found"
+        }
+
+    if point.points < data.points_required:
+
+        return {
+            "status": "error",
+            "message": "Not enough points"
+        }
+
+    point.points -= data.points_required
+
+    reward = RewardHistory(
+        user_id=user.id,
+        reward_name=data.reward_name,
+        points_used=data.points_required,
+        redeemed_at=str(datetime.now())
+    )
+
+    db.add(reward)
+
+    db.commit()
+
+    return {
+        "status": "success",
+        "message": "Reward redeemed"
+    }
+
+@app.get("/fix-points/{username}")
+def fix_points(username: str):
+
+    db = SessionLocal()
+
+    user = db.query(User).filter(
+        User.username == username
+    ).first()
+
+    if not user:
+        return {"message": "user not found"}
+
+    point = db.query(UserPoint).filter(
+        UserPoint.user_id == user.id
+    ).first()
+
+    if point:
+        return {"message": "already exists"}
+
+    new_point = UserPoint(
+        user_id=user.id,
+        points=500
+    )
+
+    db.add(new_point)
+    db.commit()
+
+@app.get("/profile/{username}")
+def get_profile(username: str):
+
+    db = SessionLocal()
+
+    user = db.query(User).filter(
+        User.username == username
+    ).first()
+
+    if not user:
+
+        return {
+            "status": "error",
+            "message": "User not found"
+        }
+
+    point = db.query(UserPoint).filter(
+        UserPoint.user_id == user.id
+    ).first()
+
+    return {
+
+        "username": user.username,
+
+        "email": user.email,
+
+        "phone": user.phone,
+
+        "points":
+        point.points if point else 0
+    }
+
+@app.get("/goals/{username}")
+def get_goals(username: str):
+
+    db = SessionLocal()
+
+    user = db.query(User).filter(
+        User.username == username
+    ).first()
+
+    if not user:
+        return {
+            "status": "error",
+            "message": "User not found"
+        }
+
+    point = db.query(UserPoint).filter(
+        UserPoint.user_id == user.id
+    ).first()
+
+    points = point.points if point else 0
+
+    if points < 200:
+        badge = "Eco Starter"
+        next_badge = "Eco Hero"
+        target = 200
+
+    elif points < 500:
+        badge = "Eco Hero"
+        next_badge = "Eco Champion"
+        target = 500
+
+    else:
+        badge = "Eco Champion"
+        next_badge = "MAX"
+        target = 500
+
+    progress = min(points / target, 1.0)
+
+    return {
+        "points": points,
+        "badge": badge,
+        "next_badge": next_badge,
+        "progress": progress
+    }
+
+    return {"message": "point created"}
