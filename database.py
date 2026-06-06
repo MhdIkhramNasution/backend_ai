@@ -152,4 +152,56 @@ class RewardHistory(Base):
 
     redeemed_at = Column(String)
 
+
+class Voucher(Base):
+
+    __tablename__ = "vouchers"
+
+    voucher_id = Column(
+        Integer,
+        primary_key=True,
+        index=True
+    )
+
+    title = Column(String)
+
+    description = Column(String)
+
+    points_required = Column(Integer)
+
+    image = Column(String)
+
+    status = Column(
+        String,
+        default="available"
+    )
+
+
+class RedeemHistory(Base):
+
+    __tablename__ = "redeem_history"
+
+    redeem_id = Column(
+        Integer,
+        primary_key=True,
+        index=True
+    )
+
+    user_id = Column(
+        Integer,
+        ForeignKey("users.id")
+    )
+
+    voucher_id = Column(
+        Integer,
+        ForeignKey("vouchers.voucher_id")
+    )
+
+    redeemed_at = Column(String)
+
+    status = Column(
+        String,
+        default="available"
+    )
+
 Base.metadata.create_all(bind=engine)

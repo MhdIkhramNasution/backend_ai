@@ -6,6 +6,8 @@ from database import (
     Item,
     ScanResult,
     UserPoint,
+    Voucher,
+    RedeemHistory,
     RewardHistory
 )
 from datetime import datetime
@@ -34,6 +36,13 @@ class RegisterModel(BaseModel):
 class LoginModel(BaseModel):
     username: str
     password: str
+
+
+class RedeemVoucherModel(BaseModel):
+
+    username: str
+
+    voucher_id: int
 
 # ================= REGISTER API =================
 
@@ -717,3 +726,135 @@ def get_goals(username: str):
     }
 
     return {"message": "point created"}
+
+@app.post("/create-voucher")
+def create_voucher():
+
+    db = SessionLocal()
+
+    voucher = Voucher(
+
+        title="Voucher A",
+
+        description="Discount 10%",
+
+        points_required=100,
+
+        image="voucher_a_images.png",
+
+        status="available"
+    )
+
+    db.add(voucher)
+
+    db.commit()
+
+    return {
+        "status":"success"
+    }
+
+
+@app.get("/vouchers")
+def get_vouchers():
+
+    db = SessionLocal()
+
+    vouchers = db.query(
+        Voucher
+    ).all()
+
+    result = []
+
+    for voucher in vouchers:
+
+        result.append({
+
+            "voucher_id":
+            voucher.voucher_id,
+
+            "title":
+            voucher.title,
+
+            "description":
+            voucher.description,
+
+            "points":
+            voucher.points_required,
+
+            "image":
+            voucher.image,
+
+            "status":
+            voucher.status
+        })
+
+    return result
+
+
+@app.post("/redeem-voucher")
+def redeem_voucher(
+    data: RedeemVoucherModel
+):
+
+    db = SessionLocal()
+
+    user = db.query(User).filter(
+        User.username == data.username
+    ).first()
+
+    if not user:
+
+        return {
+            "status":"error"
+        }
+
+    voucher = db.query(
+        Voucher
+    ).filter(
+        Voucher.voucher_id ==
+        data.voucher_id
+    ).first()
+
+    if not voucher:
+
+        return {
+            "status":"error"
+        }
+
+    point = db.query(
+        UserPoint
+    ).filter(
+        UserPoint.user_id ==
+        user.id
+    ).first()
+
+    if point.points < voucher.points_required:
+
+        return {
+            "status":"error",
+            "message":"Not enough points"
+        }
+
+    point.points -= voucher.points_required
+
+    redeem = RedeemHistory(
+
+        user_id=user.id,
+
+        voucher_id=voucher.voucher_id,
+
+        redeemed_at=str(
+            datetime.now()
+        ),
+
+        status="available"
+    )
+
+    db.add(redeem)
+
+    db.commit()
+
+    return {
+        "status":"success"
+    }
+
