@@ -84,6 +84,8 @@ class Item(Base):
     expiry_days = Column(Integer)
 
     status = Column(String)
+    
+    created_at = Column(String)
 
 # ================= CREATE TABLE =================
 class ScanResult(Base):
@@ -199,9 +201,26 @@ class RedeemHistory(Base):
 
     redeemed_at = Column(String)
 
+    voucher_code = Column(String)
+
     status = Column(
         String,
         default="available"
     )
+
+class Badge(Base):
+
+    __tablename__ = "badges"
+
+    badge_id = Column(
+        Integer,
+        primary_key=True
+    )
+
+    name = Column(String)
+
+    required_points = Column(Integer)
+
+    image = Column(String)
 
 Base.metadata.create_all(bind=engine)

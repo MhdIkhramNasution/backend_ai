@@ -15,6 +15,8 @@ import bcrypt
 from database import UserPoint
 from database import RewardHistory
 import os
+import random
+import string
 
 app = FastAPI()
 
@@ -38,11 +40,37 @@ class LoginModel(BaseModel):
     password: str
 
 
+class SaveScanModel(BaseModel):
+
+    username: str
+
+    image: str
+
+    prediction: str
+
+    confidence: str
+
+
 class RedeemVoucherModel(BaseModel):
 
     username: str
 
     voucher_id: int
+
+
+def generate_voucher_code():
+
+    return ''.join(
+
+        random.choices(
+
+            string.ascii_uppercase +
+
+            string.digits,
+
+            k=6
+        )
+    )
 
 # ================= REGISTER API =================
 
@@ -173,6 +201,19 @@ class InventoryModel(BaseModel):
     expiry_days: int
     status: str
 
+# ================= MANUAL ADD ITEM MODEL =================
+
+class ManualItemModel(BaseModel):
+
+    username: str
+
+    item_name: str
+
+    category: str
+
+    expiry_date: str
+
+    notes: str
 # ================= UPDATE ACCOUNT API =================
 
 @app.post("/update-account")
@@ -214,6 +255,33 @@ def update_account(data: UpdateAccountModel):
         "message": "Account updated"
     }
 
+def calculate_status(
+    created_at,
+    expiry_days
+):
+
+    created_date = datetime.fromisoformat(
+        created_at
+    )
+
+    days_passed = (
+        datetime.now() -
+        created_date
+    ).days
+
+    remaining_days = (
+        expiry_days -
+        days_passed
+    )
+
+    if remaining_days <= 0:
+        return "Expired"
+
+    elif remaining_days <= 5:
+        return "Almost Expired"
+
+    return "Fresh"
+
 @app.post("/inventory/add")
 def add_inventory(data: InventoryModel):
 
@@ -252,7 +320,8 @@ def add_inventory(data: InventoryModel):
         stock=1,
         image=data.image,
         expiry_days=data.expiry_days,
-        status=data.status
+        status="Fresh",
+        created_at=str(datetime.now())
     )
 
     db.add(new_item)
@@ -262,7 +331,7 @@ def add_inventory(data: InventoryModel):
     ).first()
 
     if point:
-        point.points += 5
+        point.points += 10
 
     db.commit()
 
@@ -294,6 +363,17 @@ def get_inventory(username: str):
     result = []
 
     for item in items:
+
+        # ================= AUTO STATUS =================
+
+        if item.created_at:
+
+            item.status = calculate_status(
+                item.created_at,
+                item.expiry_days
+            )
+
+        # ================= COLOR =================
 
         if item.status == "Fresh":
 
@@ -332,6 +412,8 @@ def get_inventory(username: str):
 
             "progress": progress
         })
+
+    db.commit()
 
     return result
 
@@ -714,7 +796,7 @@ def get_goals(username: str):
     else:
         badge = "Eco Champion"
         next_badge = "MAX"
-        target = 500
+        target = 900
 
     progress = min(points / target, 1.0)
 
@@ -836,6 +918,7 @@ def redeem_voucher(
         }
 
     point.points -= voucher.points_required
+    voucher_code = generate_voucher_code()
 
     redeem = RedeemHistory(
 
@@ -847,6 +930,9 @@ def redeem_voucher(
             datetime.now()
         ),
 
+        voucher_code=
+        voucher_code,
+
         status="available"
     )
 
@@ -855,6 +941,314 @@ def redeem_voucher(
     db.commit()
 
     return {
+    "status": "success",
+    "voucher_code": voucher_code
+}
+
+@app.get("/user-points/{username}")
+def get_user_points(username: str):
+
+    db = SessionLocal()
+
+    user = db.query(User).filter(
+        User.username == username
+    ).first()
+
+    if not user:
+
+        return {
+            "status": "error",
+            "message": "User not found"
+        }
+
+    point = db.query(
+        UserPoint
+    ).filter(
+        UserPoint.user_id == user.id
+    ).first()
+
+    if not point:
+
+        return {
+            "points": 0
+        }
+
+    return {
+        "points": point.points
+    }
+
+@app.get("/redeem-history/{username}")
+def redeem_history(username: str):
+
+    db = SessionLocal()
+
+    user = db.query(User).filter(
+        User.username == username
+    ).first()
+
+    if not user:
+
+        return []
+
+    histories = db.query(
+        RedeemHistory
+    ).filter(
+        RedeemHistory.user_id == user.id
+    ).all()
+
+    result = []
+
+    for history in histories:
+
+        voucher = db.query(
+            Voucher
+        ).filter(
+            Voucher.voucher_id ==
+            history.voucher_id
+        ).first()
+
+        result.append({
+
+            "voucher_name":
+            voucher.title,
+
+            "points_used":
+            voucher.points_required,
+
+            "voucher_code":
+            history.voucher_code,
+
+            "redeemed_at":
+            history.redeemed_at,
+
+            "status":
+            history.status
+        })
+
+    return result
+
+@app.post("/create-badges")
+def create_badges():
+
+    db = SessionLocal()
+
+    badges = [
+
+        Badge(
+            name="Eco Starter",
+            required_points=100,
+            image="eco_starter.png"
+        ),
+
+        Badge(
+            name="Eco Hero",
+            required_points=500,
+            image="eco_hero.png"
+        ),
+
+        Badge(
+            name="Eco Champion",
+            required_points=900,
+            image="eco_champion.png"
+        ),
+    ]
+
+    db.add_all(badges)
+
+    db.commit()
+
+    return {
         "status":"success"
     }
 
+@app.get("/badges/{username}")
+def get_badges(username:str):
+
+    db = SessionLocal()
+
+    user = db.query(User).filter(
+        User.username == username
+    ).first()
+
+    if not user:
+        return []
+
+    point = db.query(
+        UserPoint
+    ).filter(
+        UserPoint.user_id == user.id
+    ).first()
+
+    user_points = 0
+
+    if point:
+        user_points = point.points
+
+    badges = db.query(
+        Badge
+    ).all()
+
+    result = []
+
+    for badge in badges:
+
+        result.append({
+
+            "name":
+            badge.name,
+
+            "image":
+            badge.image,
+
+            "required_points":
+            badge.required_points,
+
+            "unlocked":
+            user_points >=
+            badge.required_points
+        })
+
+    return result
+
+@app.post("/scan/save")
+def save_scan(
+    data: SaveScanModel
+):
+    print("SCAN SAVE CALLED")
+    print(data)
+
+    db = SessionLocal()
+
+    user = db.query(User).filter(
+        User.username == data.username
+    ).first()
+
+    if not user:
+
+        return {
+            "status": "error",
+            "message": "User not found"
+        }
+
+    scan = ScanResult(
+
+        user_id=user.id,
+
+        image=data.image,
+
+        prediction=data.prediction,
+
+        confidence=data.confidence,
+
+        scanned_at=str(
+            datetime.now()
+        )
+    )
+
+    db.add(scan)
+
+    db.commit()
+
+    return {
+        "status": "success"
+    }
+
+@app.post("/inventory/manual-add")
+def manual_add(
+    data: ManualItemModel
+):
+
+    db = SessionLocal()
+
+    user = db.query(User).filter(
+        User.username == data.username
+    ).first()
+
+    if not user:
+        return {
+            "status": "error",
+            "message": "User not found"
+        }
+
+    # ================= AUTO IMAGE =================
+
+    image_name = (
+        data.item_name
+        .strip()
+        .lower()
+        .replace(" ", "_")
+    )
+
+    image_path = (
+        f"assets/images/{image_name}.png"
+    )
+
+    # ================= EXPIRY DAYS =================
+
+    expiry_days = 7
+
+    item = Item(
+
+        user_id=user.id,
+
+        item_name=data.item_name,
+
+        stock=1,
+
+        image=image_path,
+
+        expiry_days=expiry_days,
+
+        status="Fresh",
+
+        created_at=str(
+            datetime.now()
+        )
+    )
+
+    db.add(item)
+
+    db.commit()
+
+    return {
+
+        "status": "success",
+
+        "item": {
+
+            "name": data.item_name,
+
+            "image": image_path,
+
+            "expiry_days": expiry_days
+        }
+    }
+
+@app.put("/inventory/reduce-stock/{item_id}")
+def reduce_stock(item_id: int):
+
+    db = SessionLocal()
+
+    item = db.query(Item).filter(
+        Item.item_id == item_id
+    ).first()
+
+    if not item:
+
+        return {
+            "status": "error"
+        }
+
+    if item.stock > 0:
+
+        item.stock -= 1
+
+    if item.stock <= 0:
+
+        db.delete(item)
+
+    db.commit()
+
+    return {
+        "status": "success"
+    }
