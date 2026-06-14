@@ -8,7 +8,8 @@ from database import (
     UserPoint,
     Voucher,
     RedeemHistory,
-    RewardHistory
+    RewardHistory,
+    ActivityHistory
 )
 from datetime import datetime
 import bcrypt
@@ -57,6 +58,44 @@ class RedeemVoucherModel(BaseModel):
 
     voucher_id: int
 
+def save_activity(
+    db,
+    user_id,
+    activity
+):
+
+    history = ActivityHistory(
+
+        user_id=user_id,
+
+        activity=activity
+    )
+
+    db.add(history)
+
+    db.commit()
+
+    # ================= KEEP ONLY 20 LATEST =================
+
+    histories = db.query(
+        ActivityHistory
+    ).filter(
+
+        ActivityHistory.user_id == user_id
+
+    ).order_by(
+
+        ActivityHistory.id.desc()
+
+    ).all()
+
+    if len(histories) > 10:
+
+        for h in histories[10:]:
+
+            db.delete(h)
+
+        db.commit()
 
 def generate_voucher_code():
 
@@ -334,6 +373,15 @@ def add_inventory(data: InventoryModel):
         point.points += 10
 
     db.commit()
+
+    save_activity(
+
+        db,
+
+        user.id,
+
+        f"Added {data.item_name} to inventory"
+    )
 
     return {
         "status": "success",
@@ -940,6 +988,15 @@ def redeem_voucher(
 
     db.commit()
 
+    save_activity(
+
+        db,
+
+        user.id,
+
+        f"Redeemed {voucher.title}"
+    )
+
     return {
     "status": "success",
     "voucher_code": voucher_code
@@ -1149,6 +1206,15 @@ def save_scan(
 
     db.commit()
 
+    save_activity(
+
+        db,
+
+        user.id,
+
+        f"Scanned {data.prediction}"
+    )
+
     return {
         "status": "success"
     }
@@ -1210,6 +1276,15 @@ def manual_add(
 
     db.commit()
 
+    save_activity(
+
+        db,
+
+        user.id,
+
+        f"Added {data.item_name} manually"
+    )
+
     return {
 
         "status": "success",
@@ -1249,6 +1324,205 @@ def reduce_stock(item_id: int):
 
     db.commit()
 
+    save_activity(
+
+        db,
+
+        item.user_id,
+
+        f"Reduced stock of {item.item_name}"
+    )
+
     return {
         "status": "success"
     }
+
+# ============= HISTORY STATS ==========
+@app.get("/history/{username}")
+def get_history(username: str):
+
+    db = SessionLocal()
+
+    user = db.query(User).filter(
+        User.username == username
+    ).first()
+
+    if not user:
+        return []
+
+    histories = db.query(
+        ActivityHistory
+    ).filter(
+
+        ActivityHistory.user_id == user.id
+
+    ).order_by(
+
+        ActivityHistory.id.desc()
+
+    ).limit(20).all()
+
+    result = []
+
+    for h in histories:
+
+        result.append({
+
+            "activity":
+            h.activity,
+
+            "time":
+            h.created_at.strftime(
+                "%d %b %Y %H:%M"
+            )
+        })
+
+    return result
+
+# ================= DASHBOARD STATS =================
+
+@app.get("/dashboard-stats/{username}")
+def dashboard_stats(username: str):
+
+    db = SessionLocal()
+
+    user = db.query(User).filter(
+        User.username == username
+    ).first()
+
+    if not user:
+
+        return {
+            "status": "error"
+        }
+
+    items = db.query(Item).filter(
+        Item.user_id == user.id
+    ).all()
+
+    fresh = 0
+    almost_expired = 0
+    expired = 0
+
+    for item in items:
+
+        if item.created_at:
+
+            item.status = calculate_status(
+                item.created_at,
+                item.expiry_days
+            )
+
+        if item.status == "Fresh":
+
+            fresh += 1
+
+        elif item.status == "Almost Expired":
+
+            almost_expired += 1
+
+        else:
+
+            expired += 1
+
+    points = db.query(UserPoint).filter(
+        UserPoint.user_id == user.id
+    ).first()
+
+    total_points = 0
+
+    if points:
+
+        total_points = points.points
+
+    badge_count = 0
+
+    if total_points >= 50:
+        badge_count = 1
+
+    if total_points >= 150:
+        badge_count = 2
+
+    if total_points >= 300:
+        badge_count = 3
+
+    return {
+
+        "total_items": len(items),
+
+        "fresh": fresh,
+
+        "almost_expired": almost_expired,
+
+        "expired": expired,
+
+        "points": total_points,
+
+        "badges": badge_count
+    }
+
+# ================= NOTIFICATIONS =================
+
+@app.get("/notifications/{username}")
+def get_notifications(username: str):
+
+    db = SessionLocal()
+
+    user = db.query(User).filter(
+        User.username == username
+    ).first()
+
+    if not user:
+        return []
+
+    items = db.query(Item).filter(
+        Item.user_id == user.id
+    ).all()
+
+    notifications = []
+
+    for item in items:
+
+        # Pastikan status selalu update
+        if item.created_at:
+
+            item.status = calculate_status(
+                item.created_at,
+                item.expiry_days
+            )
+
+        # ================= EXPIRED =================
+
+        if item.status == "Expired":
+
+            notifications.append({
+
+                "title":
+                "Item Expired!",
+
+                "message":
+                f"Your {item.item_name} has expired.",
+
+                "type":
+                "danger"
+            })
+
+        # ================= ALMOST EXPIRED =================
+
+        elif item.status == "Almost Expired":
+
+            notifications.append({
+
+                "title":
+                "Item Expiring Soon!",
+
+                "message":
+                f"Your {item.item_name} will expire soon.",
+
+                "type":
+                "warning"
+            })
+
+    db.commit()
+
+    return notifications
