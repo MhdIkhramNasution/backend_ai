@@ -421,6 +421,21 @@ def get_inventory(username: str):
                 item.expiry_days
             )
 
+            created_date = datetime.fromisoformat(
+                item.created_at
+            )
+
+            days_passed = (
+                datetime.now() -
+                created_date
+            ).days
+
+            remaining_days = max(
+                0,
+                item.expiry_days -
+                days_passed
+            )
+
         # ================= COLOR =================
 
         if item.status == "Fresh":
@@ -449,10 +464,10 @@ def get_inventory(username: str):
             "image": item.image,
 
             "subtitle":
-                f"{item.expiry_days} Days Left",
+                f"{remaining_days} DAYS LEFT",
 
             "badge":
-                f"{item.expiry_days} DAYS LEFT",
+                f"{remaining_days} DAYS LEFT",
 
             "status": item.status,
 
