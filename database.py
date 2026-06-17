@@ -4,12 +4,14 @@ from sqlalchemy import (
     Integer,
     String,
     ForeignKey,
-    DateTime
+    DateTime,
+    Boolean
 )
 
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from datetime import datetime
+from sqlalchemy import Boolean
 
 # ================= DATABASE URL =================
 
@@ -86,6 +88,16 @@ class Item(Base):
     expiry_days = Column(Integer)
 
     status = Column(String)
+
+    expiring_notified = Column(
+        Boolean,
+        default=False
+    )
+
+    expired_notified = Column(
+        Boolean,
+        default=False
+    )
     
     created_at = Column(String)
 
@@ -171,14 +183,25 @@ class Voucher(Base):
 
     description = Column(String)
 
-    points_required = Column(Integer)
-
     image = Column(String)
 
-    status = Column(
-        String,
-        default="available"
-    )
+    category = Column(String)
+
+    discount_percent = Column(Integer)
+
+    max_discount = Column(Integer)
+
+    min_transaction = Column(Integer)
+
+    points_required = Column(Integer)
+
+    quota = Column(Integer)
+
+    expired_at = Column(String)
+
+    terms = Column(String)
+
+    status = Column(String)
 
 
 class RedeemHistory(Base):

@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, WebSocket
 from pydantic import BaseModel
 from database import (
     SessionLocal,
@@ -110,6 +110,89 @@ def generate_voucher_code():
             k=6
         )
     )
+
+# ================= WEBSOCKET =================
+
+active_connections = {}
+
+@app.websocket("/ws/{username}")
+async def websocket_endpoint(
+    websocket: WebSocket,
+    username: str
+):
+
+    await websocket.accept()
+
+    active_connections[
+        username
+    ] = websocket
+
+    print(
+        f"{username} connected"
+    )
+
+    try:
+
+        while True:
+
+            await websocket.receive_text()
+
+    except:
+
+        active_connections.pop(
+            username,
+            None
+        )
+
+        print(
+            f"{username} disconnected"
+        )
+
+async def send_notification(
+    username,
+    title,
+    message,
+    type_
+):
+
+    websocket = active_connections.get(
+        username
+    )
+
+    if websocket:
+
+        await websocket.send_json({
+
+            "title":
+            title,
+
+            "message":
+            message,
+
+            "type":
+            type_
+        })
+
+
+@app.get("/test-notification/{username}")
+async def test_notification(
+    username: str
+):
+
+    await send_notification(
+
+        username,
+
+        "Item Expiring Soon",
+
+        "Banana expires tomorrow",
+
+        "warning"
+    )
+
+    return {
+        "status":"sent"
+    }
 
 # ================= REGISTER API =================
 
@@ -412,6 +495,8 @@ def get_inventory(username: str):
 
     for item in items:
 
+        remaining_days = item.expiry_days
+
         # ================= AUTO STATUS =================
 
         if item.created_at:
@@ -435,6 +520,67 @@ def get_inventory(username: str):
                 item.expiry_days -
                 days_passed
             )
+
+        # ================= AUTO WEBSOCKET =================
+
+        if (
+            remaining_days <= 2 and
+            remaining_days > 0 and
+            not item.expiring_notified
+        ):
+
+            try:
+
+                import asyncio
+
+                asyncio.create_task(
+
+                    send_notification(
+
+                        username,
+
+                        "Item Expiring Soon",
+
+                        f"{item.item_name} will expire in {remaining_days} day(s)",
+
+                        "warning"
+                    )
+                )
+
+                item.expiring_notified = True
+
+            except Exception as e:
+
+                print(e)
+
+        if (
+            remaining_days <= 0 and
+            not item.expired_notified
+        ):
+
+            try:
+
+                import asyncio
+
+                asyncio.create_task(
+
+                    send_notification(
+
+                        username,
+
+                        "Item Expired",
+
+                        f"{item.item_name} has expired",
+
+                        "danger"
+                    )
+                )
+
+                item.expired_notified = True
+
+            except Exception as e:
+
+                print(e)
 
         # ================= COLOR =================
 
@@ -879,15 +1025,34 @@ def create_voucher():
 
     voucher = Voucher(
 
-        title="Voucher A",
+        title="Eco Market Voucher",
 
-        description="Discount 10%",
+        description=
+        "Get 20% discount for eco-friendly products",
+
+        image=
+        "assets/vouchers/eco_market.png",
+
+        category=
+        "Shopping",
+
+        discount_percent=20,
+
+        max_discount=50000,
+
+        min_transaction=100000,
 
         points_required=100,
 
-        image="voucher_a_images.png",
+        quota=50,
 
-        status="available"
+        expired_at=
+        "2026-12-31",
+
+        terms=
+        "Valid for eco-friendly products only",
+
+        status="active"
     )
 
     db.add(voucher)
@@ -923,11 +1088,32 @@ def get_vouchers():
             "description":
             voucher.description,
 
+            "image":
+            voucher.image,
+
+            "category":
+            voucher.category,
+
+            "discount_percent":
+            voucher.discount_percent,
+
+            "max_discount":
+            voucher.max_discount,
+
+            "min_transaction":
+            voucher.min_transaction,
+
             "points":
             voucher.points_required,
 
-            "image":
-            voucher.image,
+            "quota":
+            voucher.quota,
+
+            "expired_at":
+            voucher.expired_at,
+
+            "terms":
+            voucher.terms,
 
             "status":
             voucher.status
@@ -937,9 +1123,7 @@ def get_vouchers():
 
 
 @app.post("/redeem-voucher")
-def redeem_voucher(
-    data: RedeemVoucherModel
-):
+def redeem_voucher(data: RedeemVoucherModel):
 
     db = SessionLocal()
 
@@ -948,22 +1132,65 @@ def redeem_voucher(
     ).first()
 
     if not user:
+        return {"status": "error", "message": "User not found"}
 
-        return {
-            "status":"error"
-        }
-
-    voucher = db.query(
-        Voucher
-    ).filter(
-        Voucher.voucher_id ==
-        data.voucher_id
+    voucher = db.query(Voucher).filter(
+        Voucher.voucher_id == data.voucher_id 
     ).first()
 
     if not voucher:
+        return {"status": "error", "message": "Voucher not found"}
+
+    point = db.query(UserPoint).filter(
+        UserPoint.user_id == user.id
+    ).first()
+
+    if not point or point.points < voucher.points_required:  
+        return {"status": "error", "message": "Insufficient points"}
+
+    old_history = db.query(RedeemHistory).filter(
+        RedeemHistory.user_id == user.id,
+        RedeemHistory.voucher_id == data.voucher_id
+    ).all()
+
+    for old in old_history:
+        db.delete(old)
+
+    db.commit()
+
+    # Kurangi poin
+    point.points -= voucher.points_required 
+
+    # Generate & simpan kode baru
+    voucher_code = generate_voucher_code()
+
+    new_history = RedeemHistory(
+        user_id=user.id,
+        voucher_id=data.voucher_id,
+        voucher_code=voucher_code,
+        redeemed_at=str(datetime.now())
+    )
+
+    db.add(new_history)
+    db.commit()
+
+    return {
+        "status": "success",
+        "voucher_code": voucher_code
+    }
+# ================= SOLD OUT CHECK =================
+
+    if voucher.quota is None:
+
+        voucher.quota = 50
+
+    if voucher.quota <= 0:
 
         return {
-            "status":"error"
+
+            "status": "error",
+
+            "message": "Voucher sold out"
         }
 
     point = db.query(
@@ -981,6 +1208,7 @@ def redeem_voucher(
         }
 
     point.points -= voucher.points_required
+    voucher.quota -= 1
     voucher_code = generate_voucher_code()
 
     redeem = RedeemHistory(
@@ -1079,7 +1307,13 @@ def redeem_history(username: str):
             history.voucher_id
         ).first()
 
+        if not voucher:
+            continue
+
         result.append({
+
+            "voucher_id":
+            voucher.voucher_id,
 
             "voucher_name":
             voucher.title,
@@ -1098,7 +1332,6 @@ def redeem_history(username: str):
         })
 
     return result
-
 @app.post("/create-badges")
 def create_badges():
 
@@ -1541,3 +1774,24 @@ def get_notifications(username: str):
     db.commit()
 
     return notifications
+
+@app.get("/voucher-code/{username}/{voucher_id}")
+def get_voucher_code(username: str, voucher_id: int):
+
+    db = SessionLocal()
+
+    user = db.query(User).filter(
+        User.username == username
+    ).first()
+
+    if not user:
+        return {"voucher_code": ""}
+
+    history = db.query(RedeemHistory).filter(
+        RedeemHistory.user_id == user.id,
+        RedeemHistory.voucher_id == voucher_id
+    ).first() 
+    if not history:
+        return {"voucher_code": ""}
+
+    return {"voucher_code": history.voucher_code}
