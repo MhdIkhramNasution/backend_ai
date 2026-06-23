@@ -16,7 +16,7 @@ from sqlalchemy import Boolean
 # ================= DATABASE URL =================
 
 import os
-DATABASE_URL = os.environ.get("DATABASE_URL", "backendai-production-7ad1.up.railway.app")
+DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///./users.db")
 
 # ================= ENGINE =================
 
