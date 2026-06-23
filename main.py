@@ -120,24 +120,28 @@ async def websocket_endpoint(
     websocket: WebSocket,
     username: str
 ):
-
     await websocket.accept()
 
-    active_connections[
-        username
-    ] = websocket
+    active_connections[username] = websocket
 
-    print(
-        f"{username} connected"
-    )
+    print(f"{username} connected")
 
     try:
-
         while True:
 
-            await websocket.receive_text()
+            data = await websocket.receive_text()
 
-    except:
+            print(
+                f"Message from {username}: {data}"
+            )
+
+    except Exception as e:
+
+        print(
+            f"WS ERROR: {e}"
+        )
+
+    finally:
 
         active_connections.pop(
             username,
@@ -147,31 +151,6 @@ async def websocket_endpoint(
         print(
             f"{username} disconnected"
         )
-
-async def send_notification(
-    username,
-    title,
-    message,
-    type_
-):
-
-    websocket = active_connections.get(
-        username
-    )
-
-    if websocket:
-
-        await websocket.send_json({
-
-            "title":
-            title,
-
-            "message":
-            message,
-
-            "type":
-            type_
-        })
 
 
 @app.get("/test-notification/{username}")
