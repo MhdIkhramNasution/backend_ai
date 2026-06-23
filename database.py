@@ -15,14 +15,18 @@ from sqlalchemy import Boolean
 
 # ================= DATABASE URL =================
 
-DATABASE_URL = "sqlite:///./users.db"
+import os
+DATABASE_URL = os.environ.get("DATABASE_URL", "backendai-production-7ad1.up.railway.app")
 
 # ================= ENGINE =================
 
-engine = create_engine(
-    DATABASE_URL,
-    connect_args={"check_same_thread": False}
-)
+if DATABASE_URL.startswith("sqlite"):
+    engine = create_engine(
+        DATABASE_URL,
+        connect_args={"check_same_thread": False}
+    )
+else:
+    engine = create_engine(DATABASE_URL)
 
 # ================= SESSION =================
 
