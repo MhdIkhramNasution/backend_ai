@@ -23,7 +23,8 @@ app = FastAPI()
 
 # ================= DB DEPENDENCY =================
 
-def get_db(db: Session = Depends(get_db)):
+def get_db():
+    db = SessionLocal()
     try:
         yield db
     finally:
