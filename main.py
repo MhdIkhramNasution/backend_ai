@@ -1,4 +1,5 @@
 from fastapi import FastAPI, WebSocket, Depends
+from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from database import (
     SessionLocal,
