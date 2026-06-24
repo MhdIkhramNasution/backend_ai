@@ -1,4 +1,4 @@
-from fastapi import FastAPI, WebSocket
+from fastapi import FastAPI, WebSocket, Depends
 from pydantic import BaseModel
 from database import (
     SessionLocal,
@@ -20,6 +20,15 @@ import random
 import string
 
 app = FastAPI()
+
+# ================= DB DEPENDENCY =================
+
+def get_db(db: Session = Depends(get_db)):
+    try:
+        yield db
+    finally:
+        db.close()
+
 
 UPLOAD_FOLDER = "uploads"
 
@@ -176,9 +185,8 @@ async def test_notification(
 # ================= REGISTER API =================
 
 @app.post("/register")
-def register(data: RegisterModel):
+def register(data: RegisterModel, db: Session = Depends(get_db)):
 
-    db = SessionLocal()
 
     # CEK EMAIL
     existing_email = db.query(User).filter(
@@ -239,9 +247,8 @@ def register(data: RegisterModel):
 # ================= LOGIN API =================
 
 @app.post("/login")
-def login(data: LoginModel):
+def login(data: LoginModel, db: Session = Depends(get_db)):
 
-    db = SessionLocal()
 
     # CEK USERNAME
     user = db.query(User).filter(
@@ -318,12 +325,11 @@ class ManualItemModel(BaseModel):
 # ================= UPDATE ACCOUNT API =================
 
 @app.post("/update-account")
-def update_account(data: UpdateAccountModel):
+def update_account(data: UpdateAccountModel, db: Session = Depends(get_db)):
 
     print("USERNAME LAMA = ${UserSession.username}");
     print("USERNAME BARU = $username");
 
-    db = SessionLocal()
 
     user = db.query(User).filter(
         User.username == data.username
@@ -384,9 +390,8 @@ def calculate_status(
     return "Fresh"
 
 @app.post("/inventory/add")
-def add_inventory(data: InventoryModel):
+def add_inventory(data: InventoryModel, db: Session = Depends(get_db)):
 
-    db = SessionLocal()
 
     user = db.query(User).filter(
         User.username == data.username
@@ -453,9 +458,8 @@ def add_inventory(data: InventoryModel):
 # ================= GET INVENTORY =================
 
 @app.get("/inventory/{username}")
-def get_inventory(username: str):
+def get_inventory(username: str, db: Session = Depends(get_db)):
 
-    db = SessionLocal()
 
     user = db.query(User).filter(
         User.username == username
@@ -608,9 +612,8 @@ def get_inventory(username: str):
 # ================= GET INVENTORY =================
 
 @app.get("/scan/history/{username}")
-def get_scan_history(username: str):
+def get_scan_history(username: str, db: Session = Depends(get_db)):
 
-    db = SessionLocal()
 
     user = db.query(User).filter(
         User.username == username
@@ -655,9 +658,8 @@ def get_scan_history(username: str):
 # ================= REDUCE STOCK =================
 
 @app.put("/inventory/reduce/{item_id}")
-def reduce_stock(item_id: int):
+def reduce_stock(item_id: int, db: Session = Depends(get_db)):
 
-    db = SessionLocal()
 
     item = db.query(Item).filter(
         Item.item_id == item_id
@@ -682,9 +684,8 @@ def reduce_stock(item_id: int):
     }
 
 @app.get("/points/{username}")
-def get_points(username: str):
+def get_points(username: str, db: Session = Depends(get_db)):
 
-    db = SessionLocal()
 
     user = db.query(User).filter(
         User.username == username
@@ -705,9 +706,8 @@ def get_points(username: str):
     }
 
 @app.get("/reward-history/{username}")
-def reward_history(username: str):
+def reward_history(username: str, db: Session = Depends(get_db)):
 
-    db = SessionLocal()
 
     user = db.query(User).filter(
         User.username == username
@@ -740,9 +740,8 @@ def reward_history(username: str):
 
     return result
 @app.get("/leaderboard")
-def leaderboard():
+def leaderboard(db: Session = Depends(get_db)):
 
-    db = SessionLocal()
 
     users = db.query(
         User,
@@ -772,9 +771,8 @@ def leaderboard():
     return result
 
 @app.get("/inventory/expired/{username}")
-def expired_inventory(username: str):
+def expired_inventory(username: str, db: Session = Depends(get_db)):
 
-    db = SessionLocal()
 
     user = db.query(User).filter(
         User.username == username
@@ -804,9 +802,8 @@ def expired_inventory(username: str):
     return result
 
 @app.get("/dashboard/{username}")
-def dashboard(username: str):
+def dashboard(username: str, db: Session = Depends(get_db)):
 
-    db = SessionLocal()
 
     user = db.query(User).filter(
         User.username == username
@@ -840,9 +837,8 @@ class RedeemModel(BaseModel):
 
 
 @app.post("/redeem")
-def redeem_reward(data: RedeemModel):
+def redeem_reward(data: RedeemModel, db: Session = Depends(get_db)):
 
-    db = SessionLocal()
 
     user = db.query(User).filter(
         User.username == data.username
@@ -892,9 +888,8 @@ def redeem_reward(data: RedeemModel):
     }
 
 @app.get("/fix-points/{username}")
-def fix_points(username: str):
+def fix_points(username: str, db: Session = Depends(get_db)):
 
-    db = SessionLocal()
 
     user = db.query(User).filter(
         User.username == username
@@ -919,9 +914,8 @@ def fix_points(username: str):
     db.commit()
 
 @app.get("/profile/{username}")
-def get_profile(username: str):
+def get_profile(username: str, db: Session = Depends(get_db)):
 
-    db = SessionLocal()
 
     user = db.query(User).filter(
         User.username == username
@@ -951,9 +945,8 @@ def get_profile(username: str):
     }
 
 @app.get("/goals/{username}")
-def get_goals(username: str):
+def get_goals(username: str, db: Session = Depends(get_db)):
 
-    db = SessionLocal()
 
     user = db.query(User).filter(
         User.username == username
@@ -998,9 +991,8 @@ def get_goals(username: str):
     return {"message": "point created"}
 
 @app.post("/create-voucher")
-def create_voucher():
+def create_voucher(db: Session = Depends(get_db)):
 
-    db = SessionLocal()
 
     voucher = Voucher(
 
@@ -1044,9 +1036,8 @@ def create_voucher():
 
 
 @app.get("/vouchers")
-def get_vouchers():
+def get_vouchers(db: Session = Depends(get_db)):
 
-    db = SessionLocal()
 
     vouchers = db.query(
         Voucher
@@ -1102,9 +1093,8 @@ def get_vouchers():
 
 
 @app.post("/redeem-voucher")
-def redeem_voucher(data: RedeemVoucherModel):
+def redeem_voucher(data: RedeemVoucherModel, db: Session = Depends(get_db)):
 
-    db = SessionLocal()
 
     user = db.query(User).filter(
         User.username == data.username
@@ -1225,9 +1215,8 @@ def redeem_voucher(data: RedeemVoucherModel):
 }
 
 @app.get("/user-points/{username}")
-def get_user_points(username: str):
+def get_user_points(username: str, db: Session = Depends(get_db)):
 
-    db = SessionLocal()
 
     user = db.query(User).filter(
         User.username == username
@@ -1257,9 +1246,8 @@ def get_user_points(username: str):
     }
 
 @app.get("/redeem-history/{username}")
-def redeem_history(username: str):
+def redeem_history(username: str, db: Session = Depends(get_db)):
 
-    db = SessionLocal()
 
     user = db.query(User).filter(
         User.username == username
@@ -1312,9 +1300,8 @@ def redeem_history(username: str):
 
     return result
 @app.post("/create-badges")
-def create_badges():
+def create_badges(db: Session = Depends(get_db)):
 
-    db = SessionLocal()
 
     badges = [
 
@@ -1346,9 +1333,8 @@ def create_badges():
     }
 
 @app.get("/badges/{username}")
-def get_badges(username:str):
+def get_badges(username:str, db: Session = Depends(get_db)):
 
-    db = SessionLocal()
 
     user = db.query(User).filter(
         User.username == username
@@ -1401,7 +1387,6 @@ def save_scan(
     print("SCAN SAVE CALLED")
     print(data)
 
-    db = SessionLocal()
 
     user = db.query(User).filter(
         User.username == data.username
@@ -1451,7 +1436,6 @@ def manual_add(
     data: ManualItemModel
 ):
 
-    db = SessionLocal()
 
     user = db.query(User).filter(
         User.username == data.username
@@ -1527,9 +1511,8 @@ def manual_add(
     }
 
 @app.put("/inventory/reduce-stock/{item_id}")
-def reduce_stock(item_id: int):
+def reduce_stock(item_id: int, db: Session = Depends(get_db)):
 
-    db = SessionLocal()
 
     item = db.query(Item).filter(
         Item.item_id == item_id
@@ -1566,9 +1549,8 @@ def reduce_stock(item_id: int):
 
 # ============= HISTORY STATS ==========
 @app.get("/history/{username}")
-def get_history(username: str):
+def get_history(username: str, db: Session = Depends(get_db)):
 
-    db = SessionLocal()
 
     user = db.query(User).filter(
         User.username == username
@@ -1609,9 +1591,8 @@ def get_history(username: str):
 # ================= DASHBOARD STATS =================
 
 @app.get("/dashboard-stats/{username}")
-def dashboard_stats(username: str):
+def dashboard_stats(username: str, db: Session = Depends(get_db)):
 
-    db = SessionLocal()
 
     user = db.query(User).filter(
         User.username == username
@@ -1691,9 +1672,8 @@ def dashboard_stats(username: str):
 # ================= NOTIFICATIONS =================
 
 @app.get("/notifications/{username}")
-def get_notifications(username: str):
+def get_notifications(username: str, db: Session = Depends(get_db)):
 
-    db = SessionLocal()
 
     user = db.query(User).filter(
         User.username == username
@@ -1755,9 +1735,8 @@ def get_notifications(username: str):
     return notifications
 
 @app.get("/voucher-code/{username}/{voucher_id}")
-def get_voucher_code(username: str, voucher_id: int):
+def get_voucher_code(username: str, voucher_id: int, db: Session = Depends(get_db)):
 
-    db = SessionLocal()
 
     user = db.query(User).filter(
         User.username == username
